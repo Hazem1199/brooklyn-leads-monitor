@@ -25,18 +25,107 @@ export default defineEventHandler(async (event) => {
     group_name?: string
     post_url?: string
     content?: string
+    subject?: string
+    from?: string
+    to?: string
+    raw_body?: string
   }>(event)
 
-  if (!body?.content) {
-    throw createError({ statusCode: 400, message: 'Missing required field: content' })
+  let postContent = ''
+  let groupName = 'Facebook Group'
+  let postUrl: string | null = null
+  let sender = body?.sender || body?.from || null
+
+  // 1. Check if this is a raw email payload from Cloudflare Worker
+  if (body?.raw_body) {
+    const raw = body.raw_body
+    sender = body.from || null
+
+    // Extract Group Name from Subject
+    if (body.subject) {
+      const subject = body.subject
+      const englishMatch = subject.match(/posted in (.+)/i)
+      const arabicMatch = subject.match(/(?:نشر في|بالنشر في) (.+)/)
+      if (englishMatch) {
+        groupName = englishMatch[1].trim()
+      } else if (arabicMatch) {
+        groupName = arabicMatch[1].trim()
+      } else {
+        groupName = subject.trim()
+      }
+    }
+
+    // Try to extract Facebook post URL from raw body
+    const urlMatch = raw.match(/https?:\/\/(?:www\.)?facebook\.com\/groups\/[^\s<>"]+/i)
+    if (urlMatch) {
+      postUrl = urlMatch[0].replace(/[.,;)]$/, '')
+    }
+
+    // Extract plain text body from MIME content
+    let plainText = ''
+    const boundaryMatch = raw.match(/boundary="?([^"\s;]+)"?/i)
+    if (boundaryMatch) {
+      const boundary = boundaryMatch[1]
+      const parts = raw.split('--' + boundary)
+      for (const part of parts) {
+        if (part.includes('Content-Type: text/plain')) {
+          const headerEnd = part.indexOf('\r\n\r\n')
+          if (headerEnd !== -1) {
+            plainText = part.substring(headerEnd + 4).trim()
+          } else {
+            const lfEnd = part.indexOf('\n\n')
+            if (lfEnd !== -1) {
+              plainText = part.substring(lfEnd + 2).trim()
+            }
+          }
+          break
+        }
+      }
+    }
+
+    if (!plainText) {
+      // Fallback if not multipart
+      plainText = raw
+        .replace(/<[^>]*>/g, '') // remove HTML tags
+        .replace(/^[A-Za-z0-9-]+:.*$/gm, '') // remove headers
+        .trim()
+    }
+
+    // Decode Transfer Encoding
+    if (raw.includes('Content-Transfer-Encoding: base64')) {
+      try {
+        plainText = Buffer.from(plainText.replace(/\s/g, ''), 'base64').toString('utf-8')
+      } catch (e) {}
+    } else if (raw.includes('Content-Transfer-Encoding: quoted-printable')) {
+      plainText = plainText
+        .replace(/=\r?\n/g, '')
+        .replace(/=([0-9A-F]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    }
+
+    // Clean up Facebook footer
+    const fbFooterIndex = plainText.indexOf('This message was sent to')
+    if (fbFooterIndex !== -1) {
+      plainText = plainText.substring(0, fbFooterIndex).trim()
+    }
+    const unsubIndex = plainText.indexOf('Unsubscribe')
+    if (unsubIndex !== -1) {
+      plainText = plainText.substring(0, unsubIndex).trim()
+    }
+
+    postContent = plainText.slice(0, 1000).trim() || 'Empty email content'
+  } else {
+    // 2. Otherwise use direct fields from dashboard/simulator
+    postContent = String(body?.content || '').trim()
+    groupName = String(body?.group_name || 'Unknown Facebook Group').trim()
+    postUrl = body?.post_url || null
   }
 
-  const postContent = String(body.content).trim()
-  const groupName = String(body.group_name || 'Unknown Facebook Group').trim()
-  const postUrl = body.post_url || null
-  const sender = body.sender || null
+  if (!postContent) {
+    throw createError({ statusCode: 400, message: 'Missing required field: content or raw_body' })
+  }
 
   console.log(`[Webhook] Received post from "${groupName}" — ${postContent.slice(0, 80)}...`)
+
 
   // Step 1: Analyze with Groq AI
   const analysis = await analyzeLeadWithGroq(postContent)
