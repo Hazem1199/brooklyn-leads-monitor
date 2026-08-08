@@ -14,6 +14,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     // Server-only secrets
     geminiApiKey: process.env.GEMINI_API_KEY,
+    groqApiKey: process.env.GROQ_API_KEY,
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
     telegramChatId: process.env.TELEGRAM_CHAT_ID,
     webhookSecret: process.env.WEBHOOK_SECRET,

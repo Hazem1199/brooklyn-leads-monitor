@@ -14,8 +14,9 @@ export interface LeadAlertData {
 }
 
 export async function sendTelegramAlert(leadData: LeadAlertData): Promise<void> {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
-  const chatId = process.env.TELEGRAM_CHAT_ID
+  const config = useRuntimeConfig()
+  const botToken = config.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN
+  const chatId = config.telegramChatId || process.env.TELEGRAM_CHAT_ID
 
   if (!botToken || !chatId) {
     console.warn('[Telegram] BOT_TOKEN or CHAT_ID not set — skipping alert')
@@ -24,24 +25,25 @@ export async function sendTelegramAlert(leadData: LeadAlertData): Promise<void> 
 
   const confidencePercent = Math.round(leadData.confidence_score * 100)
   const emoji = confidencePercent >= 80 ? '🔥' : confidencePercent >= 60 ? '⚡' : '📌'
-  const postLink = leadData.post_url ? `\n🔗 [View Post](${leadData.post_url})` : ''
+  const postLink = leadData.post_url ? `\n🔗 <a href="${escapeHtml(leadData.post_url)}">View Post</a>` : ''
+  const postSnippet = leadData.post_content.slice(0, 400) + (leadData.post_content.length > 400 ? '...' : '')
 
   const message = [
-    `${emoji} *New MBA Lead Detected!*`,
+    `${emoji} <b>New MBA Lead Detected!</b>`,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `📊 *Confidence:* ${confidencePercent}%`,
-    `🎓 *Intent:* ${leadData.intent_category || 'SEEKING_MBA'}`,
-    `👥 *Group:* ${escapeMarkdown(leadData.group_name)}`,
+    `📊 <b>Confidence:</b> ${confidencePercent}%`,
+    `🎓 <b>Intent:</b> ${escapeHtml(leadData.intent_category || 'LEAD_INQUIRY')}`,
+    `👥 <b>Group:</b> ${escapeHtml(leadData.group_name)}`,
     ``,
-    `💬 *Post Content:*`,
-    `_${escapeMarkdown(leadData.post_content.slice(0, 400))}${leadData.post_content.length > 400 ? '...' : ''}_`,
+    `💬 <b>Post Content:</b>`,
+    `<i>${escapeHtml(postSnippet)}</i>`,
     ``,
-    `📝 *Summary:* ${escapeMarkdown(leadData.summary)}`,
+    `📝 <b>Summary:</b> ${escapeHtml(leadData.summary)}`,
     postLink,
     ``,
     `⏰ ${new Date(leadData.created_at).toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })}`,
     ``,
-    `🏫 *Brooklyn Business School — Lead Monitor*`,
+    `🏫 <b>Brooklyn Business School — Lead Monitor</b>`,
   ].join('\n')
 
   try {
@@ -50,8 +52,8 @@ export async function sendTelegramAlert(leadData: LeadAlertData): Promise<void> 
       body: {
         chat_id: chatId,
         text: message,
-        parse_mode: 'Markdown',
-        disable_web_page_preview: false,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
       },
     })
     console.log('[Telegram] Alert sent successfully for lead:', leadData.id)
@@ -62,7 +64,11 @@ export async function sendTelegramAlert(leadData: LeadAlertData): Promise<void> 
   }
 }
 
-function escapeMarkdown(text: string): string {
+function escapeHtml(text: string): string {
   return text
-    .replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 }
+

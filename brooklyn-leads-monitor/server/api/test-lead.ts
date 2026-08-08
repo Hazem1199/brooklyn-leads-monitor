@@ -58,7 +58,7 @@ export default defineEventHandler(async (event) => {
     postData = {
       content: body.content,
       group_name: body.group_name || 'Test Simulator',
-      post_url: body.post_url || null,
+      post_url: body.post_url || 'https://facebook.com/groups/brooklyn-leads/posts/test_simulated',
       sender: 'test-simulator@localhost',
     }
   }

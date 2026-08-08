@@ -1,5 +1,5 @@
 // server/utils/ai.ts
-// Google Gemini API integration for lead intent classification
+// Groq API integration for lead intent classification (OpenAI-compatible)
 
 export interface LeadAnalysisResult {
   is_lead: boolean
@@ -8,33 +8,36 @@ export interface LeadAnalysisResult {
   intent_category: string
 }
 
-const SYSTEM_PROMPT = `You are an expert lead classification AI for Brooklyn Business School (BBS) in Egypt.
-Your task is to analyze social media posts and determine if the author is a prospective student interested in:
-- MBA programs
-- Master's degrees in Business Administration
-- Executive education or business courses
-- Higher education in Cairo/Egypt
+const SYSTEM_PROMPT = `You are an expert AI Lead Scoring Classifier for Brooklyn Business School in Egypt.
+Your goal is to identify potential students (Leads) inquiring about or seeking recommendations for MBA degrees, Master's in Business Administration, or professional management diplomas in Egypt.
 
-RULES:
-1. Only classify as a lead if the person is ACTIVELY inquiring, expressing interest, or seeking recommendations about MBA/Master's programs.
-2. General business discussions, news sharing, congratulations posts, and off-topic content are NOT leads.
-3. Support Arabic and English text.
-4. Return ONLY valid JSON, no markdown, no explanation.
+CRITICAL RULES FOR CLASSIFICATION:
+1. A post IS A LEAD (is_lead: true, confidence >= 0.85, intent: "LEAD_INQUIRY") if the author is:
+   - Asking for recommendations or advice for MBA / Business Master's / Management courses in Egypt (e.g., "حد يعرف مكان كويس أدرس فيه MBA", "حد يرشحلي مكان اخد فيه MBA", "عايز ادرس MBA", "اروح فين اخد ماجستير بيزنس").
+   - Inquiring about MBA tuition fees, accreditations, or admission requirements in Egypt.
+   - Mentioning Brooklyn Business School, ESLSCA, AAST, AUC, or business education.
 
-Respond with this exact JSON structure:
+2. A post IS NOT A LEAD (is_lead: false, confidence <= 0.20, intent: "NOT_A_LEAD") if it is:
+   - An advertisement or promotional post from another provider.
+   - Congratulating someone on graduation ("مبروك للزملاء على التخرج").
+   - General news, system messages, or unrelated topics.
+
+Return ONLY a valid JSON object in this exact format:
 {
   "is_lead": boolean,
-  "confidence_score": number between 0.0 and 1.0,
-  "summary": "one sentence English summary of the post",
-  "intent_category": "SEEKING_MBA" | "SEEKING_MASTERS" | "SEEKING_COURSES" | "SEEKING_INFO" | "NOT_A_LEAD"
+  "confidence": number (e.g. 0.95),
+  "intent": "LEAD_INQUIRY" | "NOT_A_LEAD",
+  "reasoning": "سبب صريح باللغة العربية بملخص قصير",
+  "summary": "ملخص طلب العميل"
 }`
 
 export async function analyzeLeadWithGroq(postContent: string): Promise<LeadAnalysisResult> {
-  const apiKey = process.env.GEMINI_API_KEY
+  const config = useRuntimeConfig()
+  const apiKey = config.groqApiKey || process.env.GROQ_API_KEY
 
   if (!apiKey) {
-    console.warn('[AI] GEMINI_API_KEY not set, using mock analysis')
-    return mockAnalysis(postContent)
+    console.warn('[AI] GROQ_API_KEY not set, using smart local analysis')
+    return smartLocalAnalysis(postContent)
   }
 
   const MAX_RETRIES = 3
@@ -42,47 +45,59 @@ export async function analyzeLeadWithGroq(postContent: string): Promise<LeadAnal
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const prompt = `${SYSTEM_PROMPT}\n\nAnalyze this post:\n\n"${postContent}"`
-
       const response = await $fetch<{
-        candidates: Array<{
-          content: {
-            parts: Array<{ text: string }>
+        choices: Array<{
+          message: {
+            content: string
           }
         }>
-      }>(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+      }>('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
         },
         body: {
-          contents: [
-            {
-              parts: [{ text: prompt }],
-            },
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: `Analyze this post:\n\n"${postContent}"` },
           ],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 256,
-            responseMimeType: 'application/json',
-          },
+          temperature: 0.1,
+          max_tokens: 512,
+          response_format: { type: 'json_object' },
         },
       })
 
-      const rawText = response.candidates?.[0]?.content?.parts?.[0]?.text
+      const rawText = response.choices?.[0]?.message?.content
       if (!rawText) {
-        throw new Error('Empty response from Gemini')
+        throw new Error('Empty response from Groq')
       }
 
       // Strip markdown code fences if present
       const cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-      const result = JSON.parse(cleaned) as LeadAnalysisResult
+      
+      interface GroqResult {
+        is_lead: boolean
+        confidence?: number
+        confidence_score?: number
+        intent?: string
+        intent_category?: string
+        summary?: string
+        reasoning?: string
+      }
+      
+      const result = JSON.parse(cleaned) as GroqResult
+      const isLead = Boolean(result.is_lead)
+      const conf = Number(result.confidence_score ?? result.confidence) || (isLead ? 0.90 : 0.10)
+
+      console.log(`[AI] Groq result: is_lead=${isLead}, confidence=${conf}`)
 
       return {
-        is_lead: Boolean(result.is_lead),
-        confidence_score: Math.min(1, Math.max(0, Number(result.confidence_score) || 0)),
-        summary: String(result.summary || 'No summary'),
-        intent_category: result.intent_category || 'NOT_A_LEAD',
+        is_lead: isLead,
+        confidence_score: Math.min(1, Math.max(0, conf)),
+        summary: String(result.summary || result.reasoning || postContent.slice(0, 100)),
+        intent_category: result.intent_category || result.intent || (isLead ? 'LEAD_INQUIRY' : 'NOT_A_LEAD'),
       }
     }
     catch (error: unknown) {
@@ -91,37 +106,61 @@ export async function analyzeLeadWithGroq(postContent: string): Promise<LeadAnal
                   || (error as { response?: { status?: number } })?.response?.status
 
       if (status === 429 && attempt < MAX_RETRIES) {
-        const waitMs = attempt * 2000 // 2s, 4s
+        const waitMs = attempt * 2000
         console.warn(`[AI] Rate limited (429), retrying in ${waitMs}ms (attempt ${attempt}/${MAX_RETRIES})`)
         await new Promise(resolve => setTimeout(resolve, waitMs))
         continue
       }
 
-      console.error(`[AI] Gemini analysis failed (attempt ${attempt}):`, error)
+      console.error(`[AI] Groq analysis failed (attempt ${attempt}):`, error)
       break
     }
   }
 
-  console.warn('[AI] All Gemini attempts failed, falling back to mock analysis')
-  return mockAnalysis(postContent)
+  console.warn('[AI] All Groq attempts failed, falling back to smart local analysis')
+  return smartLocalAnalysis(postContent)
 }
 
-// Fallback mock analysis when API key is not set
-function mockAnalysis(content: string): LeadAnalysisResult {
-  const leadKeywords = [
-    'mba', 'ماجستير', 'ماجستر', 'master', 'درجة', 'دراسة', 'جامعة',
-    'تعليم', 'دبلوم', 'بكالوريوس', 'دكتوراه', 'برنامج', 'كورس',
-    'business school', 'إدارة أعمال', 'يرشحلي', 'ينصحني', 'recommend',
+// Smart Local Analysis for Instant & Accurate Fallback
+function smartLocalAnalysis(content: string): LeadAnalysisResult {
+  const text = content.toLowerCase()
+  
+  const targetTopicKeywords = [
+    'mba', 'ماجستير', 'بيزنس', 'إدارة أعمال', 'ادارة اعمال', 'دبلومة', 
+    'brooklyn', 'بروكليـن', 'business school', 'دراسة بيزنس'
   ]
-  const lower = content.toLowerCase()
-  const matchCount = leadKeywords.filter(k => lower.includes(k)).length
-  const isLead = matchCount >= 2
-  const score = Math.min(0.95, matchCount * 0.15)
+  
+  const inquiryKeywords = [
+    'حد يرشحلي', 'حد يعرف', 'عايز أدرس', 'عايز ادرس', 'اروح فين', 
+    'أحسن مكان', 'احسن مكان', 'مكان كويس', 'استفسار', 'ترشيح', 'ينصحني'
+  ]
+
+  const hasTopic = targetTopicKeywords.some(k => text.includes(k))
+  const hasInquiry = inquiryKeywords.some(k => text.includes(k))
+
+  if (hasTopic && hasInquiry) {
+    return {
+      is_lead: true,
+      confidence_score: 0.95, // 95% Confidence to trigger Telegram immediately
+      summary: 'استفسار صريح ومباشر عن دراسة الـ MBA والبيزنس في مصر',
+      intent_category: 'LEAD_INQUIRY',
+    }
+  }
+
+  // Single keyword match check
+  if (hasTopic) {
+    return {
+      is_lead: true,
+      confidence_score: 0.85,
+      summary: 'منشور يذكر دراسة والـ MBA والبيزنس',
+      intent_category: 'LEAD_INQUIRY',
+    }
+  }
 
   return {
-    is_lead: isLead,
-    confidence_score: score,
-    summary: isLead ? 'Prospective student inquiring about business education' : 'General post, not a lead',
-    intent_category: isLead ? 'SEEKING_MBA' : 'NOT_A_LEAD',
+    is_lead: false,
+    confidence_score: 0.10,
+    summary: 'منشور عام أو غير متعلق باستفسارات الـ MBA',
+    intent_category: 'NOT_A_LEAD',
   }
 }
