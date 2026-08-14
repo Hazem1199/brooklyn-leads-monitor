@@ -74,8 +74,10 @@ export function useLeads() {
           { event: 'INSERT', schema: 'public', table: 'leads' },
           (payload) => {
             const newLead = payload.new as Lead
-            leads.value.unshift(newLead)
-            total.value++
+            if (newLead.group_name !== '__SYSTEM_SETTINGS__') {
+              leads.value.unshift(newLead)
+              total.value++
+            }
           },
         )
         .subscribe((status) => {

@@ -14,6 +14,7 @@ export default defineEventHandler(async (event) => {
   let queryBuilder = supabase
     .from('leads')
     .select('*', { count: 'exact' })
+    .neq('group_name', '__SYSTEM_SETTINGS__')
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
