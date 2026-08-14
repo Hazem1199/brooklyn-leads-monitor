@@ -11,6 +11,7 @@ export interface LeadAlertData {
   intent_category?: string
   sender?: string | null
   created_at: string
+  is_duplicate?: boolean
 }
 
 export async function sendTelegramAlert(leadData: LeadAlertData): Promise<void> {
@@ -28,8 +29,12 @@ export async function sendTelegramAlert(leadData: LeadAlertData): Promise<void> 
   const postLink = leadData.post_url ? `\n🔗 <a href="${escapeHtml(leadData.post_url)}">View Post</a>` : ''
   const postSnippet = leadData.post_content.slice(0, 400) + (leadData.post_content.length > 400 ? '...' : '')
 
+  const headerText = leadData.is_duplicate 
+    ? `⚠️ <b>[مكرر - DUPLICATE]</b>\n${emoji} <b>New MBA Lead Detected!</b>` 
+    : `${emoji} <b>New MBA Lead Detected!</b>`
+
   const message = [
-    `${emoji} <b>New MBA Lead Detected!</b>`,
+    headerText,
     `━━━━━━━━━━━━━━━━━━━━`,
     `📊 <b>Confidence:</b> ${confidencePercent}%`,
     `🎓 <b>Intent:</b> ${escapeHtml(leadData.intent_category || 'LEAD_INQUIRY')}`,

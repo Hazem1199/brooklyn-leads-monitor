@@ -140,11 +140,46 @@ export default defineEventHandler(async (event) => {
       // Extract sender (author name or profile URL)
       const sender = post.user?.name || post.authorName || null
 
-      console.log(`[Apify] Analyzing post from "${groupName}": ${postContent.slice(0, 80)}...`)
+      // ── Duplicate Detection ──────────────────────────────────────────
+      const { data: existingLeads, error: checkError } = await supabase
+        .from('leads')
+        .select('is_lead, confidence_score, summary')
+        .eq('post_content', postContent.slice(0, 1000))
+        .order('created_at', { ascending: false })
+        .limit(1)
 
-      // ── AI Analysis ────────────────────────────────────────────────────
-      const analysis = await analyzeLeadWithGroq(postContent)
-      console.log(`[Apify] AI result: is_lead=${analysis.is_lead}, confidence=${analysis.confidence_score}`)
+      if (checkError) {
+        console.error('[Apify] Error checking duplicate:', checkError.message)
+      }
+
+      const isDuplicate = existingLeads && existingLeads.length > 0
+      const duplicateMode = config.duplicateMode || 'mark'
+
+      if (isDuplicate && duplicateMode === 'skip') {
+        console.log(`[Apify] Duplicate post detected. Skipping as duplicateMode is "skip": ${postContent.slice(0, 80)}...`)
+        continue
+      }
+
+      let analysis
+      let isDuplicateMarked = false
+
+      if (isDuplicate && duplicateMode === 'mark') {
+        console.log('[Apify] Duplicate post detected. duplicateMode is "mark". Re-using previous AI analysis.')
+        const prev = existingLeads![0]
+        const cleanSummary = prev.summary.startsWith('[مكرر]') ? prev.summary : `[مكرر] ${prev.summary}`
+        analysis = {
+          is_lead: prev.is_lead,
+          confidence_score: prev.confidence_score,
+          summary: cleanSummary,
+          intent_category: 'Duplicate Inquiry',
+        }
+        isDuplicateMarked = true
+      }
+      else {
+        console.log(`[Apify] Analyzing post from "${groupName}": ${postContent.slice(0, 80)}...`)
+        analysis = await analyzeLeadWithGroq(postContent)
+        console.log(`[Apify] AI result: is_lead=${analysis.is_lead}, confidence=${analysis.confidence_score}`)
+      }
 
       // ── Save to Supabase ───────────────────────────────────────────────
       const { data: lead, error: dbError } = await supabase
@@ -182,6 +217,7 @@ export default defineEventHandler(async (event) => {
           intent_category: analysis.intent_category,
           sender: lead.sender,
           created_at: lead.created_at,
+          is_duplicate: isDuplicateMarked,
         })
       }
     }

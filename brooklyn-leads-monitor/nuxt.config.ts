@@ -20,6 +20,7 @@ export default defineNuxtConfig({
     webhookSecret: process.env.WEBHOOK_SECRET,
     supabaseKey: process.env.SUPABASE_KEY,
     apifyToken: process.env.APIFY_TOKEN,
+    duplicateMode: process.env.DUPLICATE_MODE || 'mark',
 
     // Exposed to client
     public: {

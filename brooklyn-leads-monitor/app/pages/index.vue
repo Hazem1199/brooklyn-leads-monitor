@@ -8,7 +8,7 @@
 
     <!-- Header -->
     <header class="glass sticky top-0 z-50 border-b border-indigo-500/20">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xl font-bold shadow-lg shadow-indigo-500/30">
             🏫
@@ -41,7 +41,7 @@
 
     <!-- Stats Bar -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div
           v-for="stat in stats"
           :key="stat.label"
@@ -57,7 +57,7 @@
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 pb-12">
       <!-- Toolbar -->
-      <div class="flex items-center justify-between mb-6">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div class="flex items-center gap-3">
           <h2 class="text-lg font-semibold text-white">Detected Leads</h2>
           <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-medium">
@@ -119,8 +119,9 @@
             class="glass rounded-2xl p-5 border transition-all duration-300 hover:border-indigo-500/40 hover:shadow-lg hover:shadow-indigo-500/10 animate-fade-in-up"
             :class="lead.is_lead ? 'border-emerald-500/20' : 'border-slate-700/30'"
             :style="{ animationDelay: `${i * 30}ms` }"
+            :dir="isArabic(lead.post_content) ? 'rtl' : 'ltr'"
           >
-            <div class="flex items-start justify-between gap-4">
+            <div class="flex flex-col md:flex-row items-start justify-between gap-4">
               <!-- Left: content -->
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-2 flex-wrap">
@@ -138,7 +139,6 @@
                 <!-- Post Content -->
                 <p
                   class="text-sm text-slate-200 leading-relaxed mb-2 font-medium"
-                  :dir="isArabic(lead.post_content) ? 'rtl' : 'ltr'"
                 >
                   {{ lead.post_content }}
                 </p>
@@ -149,7 +149,7 @@
                 </p>
 
                 <!-- Footer -->
-                <div class="flex items-center gap-3">
+                <div class="flex items-center gap-3 flex-wrap">
                   <a
                     v-if="lead.post_url"
                     :href="lead.post_url"
