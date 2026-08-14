@@ -55,13 +55,32 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    // Try to extract Facebook post URL from raw body
-    const urlMatch = raw.match(/https?:\/\/(?:www\.)?facebook\.com\/groups\/[^\s<>"]+/i)
-    if (urlMatch) {
-      postUrl = urlMatch[0].replace(/[.,;)]$/, '')
+    // ── Extract Facebook post URL ────────────────────────────────────────
+    // Facebook sends tracking links (l.facebook.com/l.php?u=...) in the email
+    // Try direct group post URL first, then fall back to tracking link decode
+    const directUrlMatch = raw.match(/https?:\/\/(?:www\.)?facebook\.com\/groups\/[^\s<>"&]+/i)
+    if (directUrlMatch) {
+      postUrl = directUrlMatch[0].replace(/[.,;)>]+$/, '')
+    } else {
+      // Try to decode Facebook tracking URL: l.facebook.com/l.php?u=<encoded_url>
+      const trackingMatch = raw.match(/https?:\/\/l\.facebook\.com\/l\.php\?u=([^&\s<>"]+)/i)
+      if (trackingMatch) {
+        try {
+          const decoded = decodeURIComponent(trackingMatch[1])
+          // Only use if it's a real facebook post/group URL
+          if (decoded.includes('facebook.com/groups/') || decoded.includes('facebook.com/permalink/')) {
+            postUrl = decoded.replace(/[.,;)>]+$/, '')
+          } else {
+            // Fall back to the tracking URL itself so there's at least a link
+            postUrl = trackingMatch[0].replace(/[.,;)>]+$/, '')
+          }
+        } catch {
+          postUrl = trackingMatch[0].replace(/[.,;)>]+$/, '')
+        }
+      }
     }
 
-    // Extract plain text body from MIME content
+    // ── Extract plain text body from MIME content ────────────────────────
     let plainText = ''
     const boundaryMatch = raw.match(/boundary="?([^"\s;]+)"?/i)
     if (boundaryMatch) {
@@ -91,7 +110,7 @@ export default defineEventHandler(async (event) => {
         .trim()
     }
 
-    // Decode Transfer Encoding
+    // ── Decode Transfer Encoding ─────────────────────────────────────────
     if (raw.includes('Content-Transfer-Encoding: base64')) {
       try {
         plainText = Buffer.from(plainText.replace(/\s/g, ''), 'base64').toString('utf-8')
@@ -102,15 +121,35 @@ export default defineEventHandler(async (event) => {
         .replace(/=([0-9A-F]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
     }
 
-    // Clean up Facebook footer
-    const fbFooterIndex = plainText.indexOf('This message was sent to')
-    if (fbFooterIndex !== -1) {
-      plainText = plainText.substring(0, fbFooterIndex).trim()
+    // ── Strip Facebook email boilerplate ─────────────────────────────────
+    // Remove footer: "This message was sent to..." / "Unsubscribe"
+    for (const marker of ['This message was sent to', 'Unsubscribe', 'Facebook, Inc.']) {
+      const idx = plainText.indexOf(marker)
+      if (idx !== -1) plainText = plainText.substring(0, idx)
     }
-    const unsubIndex = plainText.indexOf('Unsubscribe')
-    if (unsubIndex !== -1) {
-      plainText = plainText.substring(0, unsubIndex).trim()
-    }
+
+    // Remove separator lines (sequences of = or - repeated 5+ times)
+    plainText = plainText.replace(/^[=\-_*]{5,}.*$/gm, '')
+
+    // Remove "Hi [Name]," greeting line at the top
+    plainText = plainText.replace(/^Hi\s+\w[\w\s]*,?\s*/i, '')
+
+    // Remove lines that are just whitespace / empty after cleanup
+    const lines = plainText
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0)
+
+    // Facebook wraps the post content in double-quotes on its own line — strip them
+    // e.g. "جامعة القاهرة بكام وفيه تخصصات ايه MBA"
+    const cleanLines = lines.map(l => {
+      if ((l.startsWith('"') && l.endsWith('"')) || (l.startsWith('\u201c') && l.endsWith('\u201d'))) {
+        return l.slice(1, -1).trim()
+      }
+      return l
+    })
+
+    plainText = cleanLines.join('\n').trim()
 
     postContent = plainText.slice(0, 1000).trim() || 'Empty email content'
   } else {

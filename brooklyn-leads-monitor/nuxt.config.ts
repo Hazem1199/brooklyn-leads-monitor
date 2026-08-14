@@ -19,6 +19,7 @@ export default defineNuxtConfig({
     telegramChatId: process.env.TELEGRAM_CHAT_ID,
     webhookSecret: process.env.WEBHOOK_SECRET,
     supabaseKey: process.env.SUPABASE_KEY,
+    apifyToken: process.env.APIFY_TOKEN,
 
     // Exposed to client
     public: {
