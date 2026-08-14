@@ -5,6 +5,7 @@
 import { analyzeLeadWithGroq } from '../../utils/ai'
 import { sendTelegramAlert } from '../../utils/telegram'
 import { useSupabaseServer } from '../../utils/supabase'
+import { getSystemSettings } from '../../utils/settings'
 
 // ── Apify webhook payload ──────────────────────────────────────────────────
 interface ApifyWebhookPayload {
@@ -56,6 +57,8 @@ interface ApifyFacebookPost {
 }
 
 export default defineEventHandler(async (event) => {
+  const systemSettings = await getSystemSettings()
+
   // ── 1. Validate webhook secret ───────────────────────────────────────────
   const authHeader = getHeader(event, 'x-webhook-secret') || getHeader(event, 'authorization')
   const expectedSecret = process.env.WEBHOOK_SECRET
@@ -153,7 +156,7 @@ export default defineEventHandler(async (event) => {
       }
 
       const isDuplicate = existingLeads && existingLeads.length > 0
-      const duplicateMode = config.duplicateMode || 'mark'
+      const duplicateMode = systemSettings.skipDuplicates ? 'skip' : (config.duplicateMode || 'mark')
 
       if (isDuplicate && duplicateMode === 'skip') {
         console.log(`[Apify] Duplicate post detected. Skipping as duplicateMode is "skip": ${postContent.slice(0, 80)}...`)

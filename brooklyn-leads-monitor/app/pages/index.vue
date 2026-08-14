@@ -65,7 +65,17 @@
           </span>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-4 flex-wrap">
+          <label class="flex items-center gap-2 cursor-pointer text-sm text-slate-300">
+            <input
+              id="toggle-skip-duplicates"
+              v-model="skipDuplicatesSetting"
+              type="checkbox"
+              class="w-4 h-4 rounded accent-indigo-500"
+              @change="updateSettings"
+            />
+            Skip duplicates
+          </label>
           <label class="flex items-center gap-2 cursor-pointer text-sm text-slate-300">
             <input
               id="toggle-leads-only"
@@ -128,6 +138,12 @@
                   <span :class="lead.is_lead ? 'badge-lead' : 'badge-not-lead'">
                     {{ lead.is_lead ? '✓ Lead' : '✗ Not a Lead' }}
                   </span>
+                  <span
+                    v-if="lead.summary?.startsWith('[مكرر]')"
+                    class="badge-duplicate"
+                  >
+                    ⚠️ مكرر
+                  </span>
                   <span class="text-xs text-slate-400 font-medium">
                     👥 {{ lead.group_name }}
                   </span>
@@ -145,7 +161,7 @@
 
                 <!-- Summary -->
                 <p class="text-xs text-slate-400 italic mb-3">
-                  💡 {{ lead.summary }}
+                  💡 {{ lead.summary?.replace(/^\[مكرر\]\s*/, '') }}
                 </p>
 
                 <!-- Footer -->
@@ -287,7 +303,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useLeads } from '~/composables/useLeads'
 
 // Disable SSR — this dashboard requires client-side Supabase Realtime
@@ -307,6 +323,35 @@ useHead({
 })
 
 const { leads, total, isLoading, error, isConnected, leadsOnlyFilter, refresh } = useLeads()
+
+const skipDuplicatesSetting = ref(false)
+
+async function loadSettings() {
+  try {
+    const data = await $fetch<{ skipDuplicates: boolean }>('/api/settings')
+    skipDuplicatesSetting.value = data.skipDuplicates
+  } catch (err) {
+    console.error('Failed to load settings:', err)
+  }
+}
+
+async function updateSettings() {
+  try {
+    await $fetch('/api/settings', {
+      method: 'POST',
+      body: {
+        skipDuplicates: skipDuplicatesSetting.value,
+      },
+    })
+  } catch (err) {
+    console.error('Failed to update settings:', err)
+    alert('Failed to save settings. Please try again.')
+  }
+}
+
+onMounted(() => {
+  loadSettings()
+})
 
 // Stats
 const stats = computed(() => {
