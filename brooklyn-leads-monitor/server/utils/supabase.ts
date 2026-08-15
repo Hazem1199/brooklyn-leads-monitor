@@ -24,3 +24,25 @@ export function useSupabaseServer() {
 
   return _client
 }
+
+let _adminClient: ReturnType<typeof createClient> | null = null
+
+export function useSupabaseAdmin() {
+  if (_adminClient) return _adminClient
+
+  const url = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
+
+  if (!url || !key) {
+    throw createError({
+      statusCode: 500,
+      message: 'Supabase admin configuration missing (SUPABASE_URL or keys not set)',
+    })
+  }
+
+  _adminClient = createClient(url, key, {
+    auth: { persistSession: false },
+  })
+
+  return _adminClient
+}

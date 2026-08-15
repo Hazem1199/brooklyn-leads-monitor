@@ -1,4 +1,4 @@
-import { queryDb } from '../../utils/db'
+import { useSupabaseAdmin } from '../../utils/supabase'
 
 interface TelegramUpdate {
   message?: {
@@ -32,16 +32,24 @@ export default defineEventHandler(async (event) => {
     const userId = parts[1]?.trim()
 
     if (userId) {
-      // Update profiles telegram_chat_id in Supabase bypassing RLS via pg
+      // Update profiles telegram_chat_id in Supabase bypassing RLS via Admin Client
       try {
-        await queryDb(
-          'UPDATE public.profiles SET telegram_chat_id = $1 WHERE id = $2',
-          [String(chat.id), userId]
-        )
-      } catch (dbError: any) {
-        console.error('[Telegram Webhook] Failed to update profile via pg:', dbError.message)
-        await sendTelegramReply(chat.id, '❌ حدث خطأ أثناء ربط حسابك بالمنصة. يرجى المحاولة لاحقاً.')
-        return { success: false, error: dbError.message }
+        const supabaseAdmin = useSupabaseAdmin()
+        const { error: dbError } = await supabaseAdmin
+          .from('profiles')
+          .update({ telegram_chat_id: String(chat.id) })
+          .eq('id', userId)
+
+        if (dbError) {
+          console.error('[Telegram Webhook] Failed to update profile via Supabase Admin:', dbError.message)
+          await sendTelegramReply(chat.id, `❌ حدث خطأ أثناء تحديث البيانات:\n${dbError.message}`)
+          return { success: false, error: dbError.message }
+        }
+      } catch (err: any) {
+        const errorMsg = err.message || String(err)
+        console.error('[Telegram Webhook] Error connecting/querying via Supabase Admin:', errorMsg)
+        await sendTelegramReply(chat.id, `❌ حدث خطأ أثناء الاتصال بالخادم:\n${errorMsg}`)
+        return { success: false, error: errorMsg }
       }
 
       console.log(`[Telegram Webhook] Successfully linked user ${userId} to chat ${chat.id}`)
