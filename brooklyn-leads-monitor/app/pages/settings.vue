@@ -85,7 +85,7 @@
         <h3 class="text-sm font-bold text-white uppercase tracking-wider">How it works:</h3>
         <ol class="text-xs text-slate-400 space-y-2.5 list-decimal pl-4 leading-relaxed font-medium">
           <li>Click the <b>"Connect Telegram Automatically"</b> button above.</li>
-          <li>A new browser tab will open directing you to <b>@brooklyn_leads_bot</b>.</li>
+          <li>A new browser tab will open directing you to <b>@brooklyn_mba_alert_bot</b>.</li>
           <li>Click <b>Start</b> (or send the generated code) inside Telegram.</li>
           <li>Our bot will automatically read your account token, link it, and show the "Connected" status here in real-time!</li>
         </ol>
