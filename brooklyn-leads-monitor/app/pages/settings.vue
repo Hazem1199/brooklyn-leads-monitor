@@ -37,7 +37,7 @@
             <!-- Connect Button -->
             <div v-if="!telegramChatId" class="text-center py-4">
               <a
-                :href="`https://t.me/brooklyn_leads_bot?start=${user?.id}`"
+                :href="`https://t.me/brooklyn_mba_alert_bot?start=${user?.id}`"
                 target="_blank"
                 class="btn-primary inline-flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl text-sm font-black shadow-lg shadow-indigo-600/30 hover:scale-[1.02] transition-transform w-full"
               >
