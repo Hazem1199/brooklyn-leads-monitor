@@ -30,6 +30,7 @@ create table public.monitors (
   niche_description   text,
   keywords            text,
   is_active           boolean not null default true,
+  sync_status         varchar(20) not null default 'pending',
   created_at          timestamptz not null default now()
 );
 

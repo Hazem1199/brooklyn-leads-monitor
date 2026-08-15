@@ -54,9 +54,47 @@
                 </a>
                 <span v-else class="text-[10px] text-slate-500 font-bold uppercase tracking-wider block mt-1">No group link</span>
               </div>
-              <span :class="['text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider', monitor.is_active ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-400']">
-                {{ monitor.is_active ? 'Active' : 'Inactive' }}
-              </span>
+              <div class="flex flex-col items-end gap-1.5 shrink-0">
+                <!-- If the monitor is fully active -->
+                <template v-if="monitor.is_active">
+                  <span class="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Active ✓
+                  </span>
+                  <!-- Show Telegram Warning if active but Telegram isn't connected -->
+                  <span
+                    v-if="!telegramConnected"
+                    class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold uppercase tracking-wider animate-pulse"
+                    title="Connect Telegram in Settings to receive notifications"
+                  >
+                    Pending Connection ⚠️
+                  </span>
+                </template>
+
+                <!-- If the monitor is pending Apify sync -->
+                <template v-else-if="monitor.sync_status === 'pending'">
+                  <span class="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1 animate-pulse">
+                    <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping"></span>
+                    Pending... ⏳
+                  </span>
+                </template>
+
+                <!-- If the monitor had a sync error -->
+                <template v-else-if="monitor.sync_status === 'error'">
+                  <span 
+                    class="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                    title="Could not connect to Apify. Please verify your API tokens."
+                  >
+                    Sync Error ❌
+                  </span>
+                </template>
+
+                <!-- If the monitor is manually deactivated by user -->
+                <template v-else>
+                  <span class="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-slate-800 text-slate-400">
+                    Inactive
+                  </span>
+                </template>
+              </div>
             </div>
 
             <!-- Niche Details -->
@@ -195,7 +233,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useAuth } from '~/composables/useAuth'
 import { useHead } from '#imports'
 
@@ -211,6 +249,7 @@ useHead({
 const { authFetch } = useAuth()
 
 const monitors = ref<any[]>([])
+const telegramConnected = ref(false)
 const isLoading = ref(false)
 const isSaving = ref(false)
 const showAddModal = ref(false)
@@ -222,15 +261,47 @@ const newGroup = ref({
   keywords: ''
 })
 
+let monitorPollInterval: any = null
+
 onMounted(async () => {
   await fetchMonitors()
 })
 
+onUnmounted(() => {
+  stopMonitorPolling()
+})
+
+function startMonitorPolling() {
+  if (monitorPollInterval) return
+  monitorPollInterval = setInterval(async () => {
+    const hasPending = monitors.value.some(m => !m.is_active && m.sync_status === 'pending')
+    if (hasPending) {
+      await fetchMonitors()
+    } else {
+      stopMonitorPolling()
+    }
+  }, 4000)
+}
+
+function stopMonitorPolling() {
+  if (monitorPollInterval) {
+    clearInterval(monitorPollInterval)
+    monitorPollInterval = null
+  }
+}
+
 async function fetchMonitors() {
   isLoading.value = true
   try {
-    const res = await authFetch<{ success: boolean; data: any[] }>('/api/monitors')
+    const res = await authFetch<{ success: boolean; telegram_connected: boolean; data: any[] }>('/api/monitors')
     monitors.value = res.data || []
+    telegramConnected.value = res.telegram_connected || false
+    
+    // Start polling if any monitor is in pending status
+    const hasPending = monitors.value.some(m => !m.is_active && m.sync_status === 'pending')
+    if (hasPending) {
+      startMonitorPolling()
+    }
   } catch (err) {
     console.error('Failed to fetch monitors:', err)
   } finally {
@@ -248,6 +319,7 @@ async function createMonitor() {
     
     if (res.success) {
       monitors.value.unshift(res.data)
+      startMonitorPolling() // start polling immediately for the new pending monitor
       showAddModal.value = false
       // Reset form
       newGroup.value = {
