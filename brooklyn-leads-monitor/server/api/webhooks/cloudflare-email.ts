@@ -165,55 +165,106 @@ export default defineEventHandler(async (event) => {
 
   console.log(`[Webhook] Received post from "${groupName}" — ${postContent.slice(0, 80)}...`)
 
-
-  // Step 1: Analyze with Groq AI
-  const analysis = await analyzeLeadWithGroq(postContent)
-  console.log(`[Webhook] AI Result: is_lead=${analysis.is_lead}, confidence=${analysis.confidence_score}`)
-
-  // Step 2: Save to Supabase
   const supabase = useSupabaseServer()
-  const { data: lead, error: dbError } = await supabase
-    .from('leads')
-    .insert({
-      group_name: groupName,
-      post_url: postUrl,
-      post_content: postContent,
-      summary: analysis.summary,
-      is_lead: analysis.is_lead,
-      confidence_score: analysis.confidence_score,
-      sender: sender,
-    })
-    .select()
-    .single()
 
-  if (dbError) {
-    console.error('[Webhook] Database error:', dbError)
-    throw createError({ statusCode: 500, message: `Database error: ${dbError.message}` })
+  // 1. Fetch all active monitors
+  const { data: monitors, error: monitorsError } = await supabase
+    .from('monitors')
+    .select('*')
+    .eq('is_active', true)
+
+  if (monitorsError) {
+    console.error('[Webhook] Failed to fetch monitors:', monitorsError.message)
+    throw createError({ statusCode: 500, message: 'Database error fetching monitors' })
   }
 
-  console.log(`[Webhook] Saved to DB with id: ${lead.id}`)
+  // 2. Filter monitors matching groupName or postUrl
+  const matchingMonitors = (monitors || []).filter((m) => {
+    const nameMatch = m.group_name && groupName && m.group_name.toLowerCase().trim() === groupName.toLowerCase().trim()
+    const urlMatch = m.group_url && postUrl && postUrl.toLowerCase().includes(m.group_url.toLowerCase().trim())
+    return nameMatch || urlMatch
+  })
 
-  // Step 3: Send Telegram alert if it's a lead
-  if (analysis.is_lead && lead) {
-    await sendTelegramAlert({
-      id: lead.id,
-      group_name: lead.group_name,
-      post_url: lead.post_url,
-      post_content: lead.post_content,
-      summary: lead.summary,
-      confidence_score: lead.confidence_score,
-      intent_category: analysis.intent_category,
-      sender: lead.sender,
-      created_at: lead.created_at,
-    })
+  console.log(`[Webhook] Matched ${matchingMonitors.length} monitor(s) for post`)
+
+  if (matchingMonitors.length === 0) {
+    return {
+      success: true,
+      message: 'Post did not match any active monitors',
+      matched_monitors: 0,
+    }
   }
 
-  // Return response
+  let processedCount = 0
+  let leadsFound = 0
+
+  // 3. Process the post for each matching tenant monitor
+  for (const monitor of matchingMonitors) {
+    try {
+      // Get user profile for personal Telegram Chat ID
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('telegram_chat_id')
+        .eq('id', monitor.user_id)
+        .single()
+
+      // Run AI analysis using specific monitor's niche keywords & description
+      const analysis = await analyzeLeadWithGroq(
+        postContent,
+        monitor.niche_description || undefined,
+        monitor.keywords || undefined
+      )
+
+      // Save user-specific lead
+      const { data: lead, error: dbError } = await supabase
+        .from('leads')
+        .insert({
+          user_id: monitor.user_id,
+          monitor_id: monitor.id,
+          group_name: groupName,
+          post_url: postUrl,
+          post_content: postContent,
+          summary: analysis.summary,
+          is_lead: analysis.is_lead,
+          confidence_score: analysis.confidence_score,
+          sender: sender,
+        })
+        .select()
+        .single()
+
+      if (dbError) {
+        console.error(`[Webhook] Database error saving lead for user ${monitor.user_id}:`, dbError.message)
+        continue
+      }
+
+      processedCount++
+
+      if (analysis.is_lead && lead) {
+        leadsFound++
+        // Send alert to this specific user's Telegram chat id
+        await sendTelegramAlert({
+          id: lead.id,
+          group_name: lead.group_name,
+          post_url: lead.post_url,
+          post_content: lead.post_content,
+          summary: lead.summary,
+          confidence_score: lead.confidence_score,
+          intent_category: analysis.intent_category,
+          sender: lead.sender,
+          created_at: lead.created_at,
+          telegram_chat_id: profile?.telegram_chat_id || undefined,
+        })
+      }
+    }
+    catch (err: unknown) {
+      console.error(`[Webhook] Error processing monitor ${monitor.id}:`, err)
+    }
+  }
+
   return {
     success: true,
-    is_lead: analysis.is_lead,
-    confidence_score: analysis.confidence_score,
-    summary: analysis.summary,
-    lead_id: lead?.id,
+    matched_monitors: matchingMonitors.length,
+    processed: processedCount,
+    leads_found: leadsFound,
   }
 })

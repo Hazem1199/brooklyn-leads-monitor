@@ -7,6 +7,7 @@ import { createClient, type RealtimeChannel, type SupabaseClient } from '@supaba
 
 export interface Lead {
   id: string
+  user_id: string
   group_name: string
   post_url: string | null
   post_content: string
@@ -24,7 +25,10 @@ export interface LeadsResponse {
   pages: number
 }
 
+import { useAuth } from './useAuth'
+
 export function useLeads() {
+  const { authFetch } = useAuth()
   const config = useRuntimeConfig()
   const leads = ref<Lead[]>([])
   const total = ref(0)
@@ -50,7 +54,7 @@ export function useLeads() {
     isLoading.value = true
     error.value = null
     try {
-      const res = await $fetch<LeadsResponse>('/api/leads', {
+      const res = await authFetch<LeadsResponse>('/api/leads', {
         params: { page, limit: 30, leads_only: leadsOnlyFilter.value },
       })
       leads.value = res.data
@@ -74,7 +78,8 @@ export function useLeads() {
           { event: 'INSERT', schema: 'public', table: 'leads' },
           (payload) => {
             const newLead = payload.new as Lead
-            if (newLead.group_name !== '__SYSTEM_SETTINGS__') {
+            const { user } = useAuth()
+            if (newLead.user_id === user.value?.id) {
               leads.value.unshift(newLead)
               total.value++
             }

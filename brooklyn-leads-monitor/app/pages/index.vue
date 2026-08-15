@@ -1,378 +1,335 @@
 <template>
-  <div class="min-h-screen">
-    <!-- Google Fonts -->
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Cairo:wght@400;600;700&display=swap"
-      rel="stylesheet"
-    />
-
-    <!-- Header -->
-    <header class="glass sticky top-0 z-50 border-b border-indigo-500/20">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xl font-bold shadow-lg shadow-indigo-500/30">
-            🏫
-          </div>
-          <div>
-            <h1 class="text-lg font-bold text-white leading-tight">Brooklyn Business School</h1>
-            <p class="text-xs text-indigo-400 font-medium">MBA Lead Monitor — Real-time Intelligence</p>
-          </div>
+  <NuxtLayout name="default">
+    <div class="p-6 md:p-8 space-y-8 max-w-7xl mx-auto w-full">
+      <!-- Title Section -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 class="text-2xl font-black text-white tracking-tight">SaaS Dashboard Overview</h2>
+          <p class="text-slate-400 text-sm mt-1">Real-time niche leads monitor and AI classifier</p>
         </div>
-
         <div class="flex items-center gap-3">
-          <!-- Live indicator -->
-          <div class="flex items-center gap-2 px-3 py-1.5 rounded-full glass border border-indigo-500/20">
+          <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800/80">
             <div :class="['w-2 h-2 rounded-full', isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500']" />
-            <span class="text-xs font-medium" :class="isConnected ? 'text-emerald-400' : 'text-slate-400'">
-              {{ isConnected ? 'LIVE' : 'Offline' }}
+            <span class="text-[11px] font-bold tracking-wider" :class="isConnected ? 'text-emerald-400' : 'text-slate-400'">
+              {{ isConnected ? 'REAL-TIME ACTIVE' : 'DISCONNECTED' }}
             </span>
           </div>
-
           <button
-            id="btn-simulate"
-            class="btn-primary"
-            @click="showSimulator = true"
+            @click="openSimulator"
+            class="btn-primary flex items-center gap-2"
           >
-            <span>🔬</span> Simulate Post
+            <span>🔬</span> Test Simulation
           </button>
         </div>
       </div>
-    </header>
 
-    <!-- Stats Bar -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <!-- Stats Bar -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-5">
         <div
           v-for="stat in stats"
           :key="stat.label"
-          class="glass rounded-2xl p-4 border border-indigo-500/10 hover:border-indigo-500/30 transition-all duration-300"
+          class="glass rounded-2xl p-5 border border-slate-800 hover:border-indigo-500/30 transition-all duration-300 relative group"
         >
-          <div class="text-2xl mb-1">{{ stat.icon }}</div>
-          <div class="text-2xl font-bold text-white">{{ stat.value }}</div>
-          <div class="text-xs text-slate-400 mt-0.5">{{ stat.label }}</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Main Content -->
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 pb-12">
-      <!-- Toolbar -->
-      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div class="flex items-center gap-3">
-          <h2 class="text-lg font-semibold text-white">Detected Leads</h2>
-          <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-medium">
-            {{ total }} total
-          </span>
-        </div>
-
-        <div class="flex items-center gap-4 flex-wrap">
-          <label class="flex items-center gap-2 cursor-pointer text-sm text-slate-300">
-            <input
-              id="toggle-skip-duplicates"
-              v-model="skipDuplicatesSetting"
-              type="checkbox"
-              class="w-4 h-4 rounded accent-indigo-500"
-              @change="updateSettings"
-            />
-            Skip duplicates
-          </label>
-          <label class="flex items-center gap-2 cursor-pointer text-sm text-slate-300">
-            <input
-              id="toggle-leads-only"
-              v-model="leadsOnlyFilter"
-              type="checkbox"
-              class="w-4 h-4 rounded accent-indigo-500"
-              @change="refresh"
-            />
-            Leads only
-          </label>
-          <button
-            id="btn-refresh"
-            class="btn-ghost text-xs"
-            :disabled="isLoading"
-            @click="refresh"
-          >
-            <span :class="['text-sm', isLoading && 'animate-spin inline-block']">↻</span>
-            Refresh
-          </button>
+          <div class="absolute inset-0 bg-indigo-500/2 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+          <div class="text-3xl mb-2">{{ stat.icon }}</div>
+          <div class="text-3xl font-extrabold text-white tracking-tight">{{ stat.value }}</div>
+          <div class="text-xs text-slate-400 font-medium mt-1">{{ stat.label }}</div>
         </div>
       </div>
 
-      <!-- Loading -->
-      <div v-if="isLoading && leads.length === 0" class="flex flex-col items-center justify-center py-24 gap-4">
-        <div class="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-        <p class="text-slate-400 text-sm">Loading leads...</p>
-      </div>
+      <!-- Two Column Layout: Monitors Overview & Recent Leads -->
+      <div class="grid lg:grid-cols-3 gap-8">
+        <!-- Left: Monitors Overview (Col span 1) -->
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="text-lg font-bold text-white tracking-tight">Monitored Niche Groups</h3>
+            <NuxtLink to="/monitors" class="text-xs text-indigo-400 hover:text-indigo-300 font-bold transition-colors">
+              Manage Monitors ➔
+            </NuxtLink>
+          </div>
 
-      <!-- Error -->
-      <div v-else-if="error" class="glass rounded-2xl p-6 border border-red-500/20 text-center">
-        <div class="text-3xl mb-2">⚠️</div>
-        <p class="text-red-400 font-medium">{{ error }}</p>
-        <button class="btn-ghost mt-3 text-sm" @click="refresh">Retry</button>
-      </div>
+          <div v-if="monitorsLoading" class="glass rounded-2xl p-8 border border-slate-800 flex justify-center">
+            <div class="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          </div>
 
-      <!-- Empty State -->
-      <div v-else-if="leads.length === 0" class="flex flex-col items-center justify-center py-24 gap-4">
-        <div class="text-5xl">📭</div>
-        <p class="text-slate-400 text-sm">No leads yet. Simulate a post to get started!</p>
-        <button class="btn-primary" @click="showSimulator = true">
-          🔬 Simulate a Post
-        </button>
-      </div>
+          <div v-else-if="monitors.length === 0" class="glass rounded-2xl p-6 border border-slate-800 text-center space-y-3">
+            <div class="text-4xl">🎯</div>
+            <p class="text-slate-400 text-xs font-medium">You aren't monitoring any groups yet.</p>
+            <NuxtLink to="/monitors" class="btn-primary w-full justify-center py-2 text-xs">
+              + Add First Monitor
+            </NuxtLink>
+          </div>
 
-      <!-- Leads Grid -->
-      <div v-else class="grid gap-4">
-        <TransitionGroup name="lead-list">
-          <article
-            v-for="(lead, i) in leads"
-            :key="lead.id"
-            class="glass rounded-2xl p-5 border transition-all duration-300 hover:border-indigo-500/40 hover:shadow-lg hover:shadow-indigo-500/10 animate-fade-in-up"
-            :class="lead.is_lead ? 'border-emerald-500/20' : 'border-slate-700/30'"
-            :style="{ animationDelay: `${i * 30}ms` }"
-            :dir="isArabic(lead.post_content) ? 'rtl' : 'ltr'"
-          >
-            <div class="flex flex-col md:flex-row items-start justify-between gap-4">
-              <!-- Left: content -->
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 mb-2 flex-wrap">
+          <div v-else class="space-y-3">
+            <div
+              v-for="monitor in monitors.slice(0, 3)"
+              :key="monitor.id"
+              class="glass rounded-2xl p-4 border border-slate-800/80 hover:border-slate-700/60 transition-all"
+            >
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="text-xs font-bold text-white truncate max-w-[150px]">{{ monitor.group_name }}</span>
+                <span :class="['text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider', monitor.is_active ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-400']">
+                  {{ monitor.is_active ? 'Active' : 'Inactive' }}
+                </span>
+              </div>
+              <p class="text-[11px] text-slate-400 line-clamp-1 mb-2">🎯 {{ monitor.niche_description || 'No custom description' }}</p>
+              <div class="flex flex-wrap gap-1">
+                <span v-for="key in monitor.keywords?.split(',').slice(0, 3)" :key="key" class="text-[9px] bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded text-indigo-400">
+                  {{ key.trim() }}
+                </span>
+              </div>
+            </div>
+            <div v-if="monitors.length > 3" class="text-center">
+              <NuxtLink to="/monitors" class="text-[11px] text-slate-400 hover:text-slate-300 font-semibold">
+                + View all {{ monitors.length }} monitors
+              </NuxtLink>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Recent Leads (Col span 2) -->
+        <div class="lg:col-span-2 space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="text-lg font-bold text-white tracking-tight">Recent Detected Leads</h3>
+            <NuxtLink to="/leads" class="text-xs text-indigo-400 hover:text-indigo-300 font-bold transition-colors">
+              All Leads ➔
+            </NuxtLink>
+          </div>
+
+          <div v-if="isLoading && leads.length === 0" class="glass rounded-2xl p-12 border border-slate-800 flex flex-col items-center justify-center gap-3">
+            <div class="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+            <span class="text-xs text-slate-400">Loading leads...</span>
+          </div>
+
+          <div v-else-if="leads.length === 0" class="glass rounded-2xl p-12 border border-slate-800 text-center space-y-3">
+            <div class="text-4xl">📥</div>
+            <p class="text-slate-400 text-xs font-medium">No leads detected yet. Try running a simulation!</p>
+          </div>
+
+          <div v-else class="space-y-4">
+            <article
+              v-for="lead in leads.slice(0, 5)"
+              :key="lead.id"
+              class="glass rounded-2xl p-5 border transition-all duration-200 hover:border-slate-700/60"
+              :class="lead.is_lead ? 'border-emerald-500/10 hover:border-emerald-500/30' : 'border-slate-800'"
+              :dir="isArabic(lead.post_content) ? 'rtl' : 'ltr'"
+            >
+              <div class="flex flex-col sm:flex-row items-start justify-between gap-3 mb-3">
+                <div class="flex items-center gap-2 flex-wrap">
                   <span :class="lead.is_lead ? 'badge-lead' : 'badge-not-lead'">
-                    {{ lead.is_lead ? '✓ Lead' : '✗ Not a Lead' }}
+                    {{ lead.is_lead ? '✓ Lead' : '✗ Not Lead' }}
                   </span>
-                  <span
-                    v-if="lead.summary?.startsWith('[مكرر]')"
-                    class="badge-duplicate"
-                  >
-                    ⚠️ مكرر
-                  </span>
-                  <span class="text-xs text-slate-400 font-medium">
+                  <span class="text-[11px] text-slate-400 font-bold">
                     👥 {{ lead.group_name }}
                   </span>
-                  <span class="text-xs text-slate-500">
+                  <span class="text-[10px] text-slate-500 font-medium">
                     {{ formatDate(lead.created_at) }}
                   </span>
                 </div>
-
-                <!-- Post Content -->
-                <p
-                  class="text-sm text-slate-200 leading-relaxed mb-2 font-medium"
-                >
-                  {{ lead.post_content }}
-                </p>
-
-                <!-- Summary -->
-                <p class="text-xs text-slate-400 italic mb-3">
-                  💡 {{ lead.summary?.replace(/^\[مكرر\]\s*/, '') }}
-                </p>
-
-                <!-- Footer -->
-                <div class="flex items-center gap-3 flex-wrap">
-                  <a
-                    v-if="lead.post_url"
-                    :href="lead.post_url"
-                    target="_blank"
-                    class="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
-                  >
-                    🔗 View Original Post
-                  </a>
-                  <span v-if="lead.sender" class="text-xs text-slate-500">
-                    📧 {{ lead.sender }}
-                  </span>
+                <div class="text-xs font-bold text-white bg-slate-900 border border-slate-800 px-2 py-1 rounded-xl">
+                  {{ Math.round(lead.confidence_score * 100) }}% Confidence
                 </div>
               </div>
 
-              <!-- Right: confidence -->
-              <div class="flex-shrink-0 text-center">
-                <div
-                  class="w-16 h-16 rounded-2xl flex flex-col items-center justify-center"
-                  :class="confidenceClass(lead.confidence_score)"
-                >
-                  <span class="text-xl font-bold">{{ Math.round(lead.confidence_score * 100) }}</span>
-                  <span class="text-xs opacity-70">%</span>
-                </div>
-                <p class="text-xs text-slate-500 mt-1">confidence</p>
-              </div>
-            </div>
-          </article>
-        </TransitionGroup>
+              <!-- Post text -->
+              <p class="text-sm text-slate-200 font-medium line-clamp-2 leading-relaxed mb-2">{{ lead.post_content }}</p>
+              
+              <!-- AI Summary -->
+              <p class="text-xs text-slate-400 italic">💡 {{ lead.summary }}</p>
+            </article>
+          </div>
+        </div>
       </div>
-    </main>
+    </div>
 
     <!-- Simulator Modal -->
     <Transition name="modal">
       <div
         v-if="showSimulator"
-        class="fixed inset-0 z-50 flex items-center justify-center p-4"
-        style="background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm"
         @click.self="showSimulator = false"
       >
-        <div class="glass rounded-3xl p-6 w-full max-w-lg border border-indigo-500/30 shadow-2xl shadow-indigo-500/20">
+        <div class="glass rounded-3xl p-6 w-full max-w-lg border border-indigo-500/30 shadow-2xl relative">
           <div class="flex items-center justify-between mb-5">
             <div>
-              <h3 class="text-lg font-bold text-white">🔬 Simulate Facebook Post</h3>
-              <p class="text-xs text-slate-400 mt-0.5">Test the full AI analysis pipeline</p>
+              <h3 class="text-lg font-bold text-white">🔬 Simulate Lead Scraper</h3>
+              <p class="text-xs text-slate-400 mt-0.5">Test dynamic multi-tenant niche classification</p>
             </div>
             <button
-              id="btn-close-modal"
-              class="w-8 h-8 rounded-full glass flex items-center justify-center text-slate-400 hover:text-white transition-colors"
+              class="w-8 h-8 rounded-full glass border border-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
               @click="showSimulator = false"
             >
               ✕
             </button>
           </div>
 
-          <!-- Quick samples -->
-          <div class="mb-4">
-            <p class="text-xs text-slate-400 mb-2 font-medium uppercase tracking-wide">Quick Samples</p>
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="(sample, i) in quickSamples"
-                :key="i"
-                class="text-xs px-3 py-1.5 rounded-lg glass border border-indigo-500/20 text-indigo-300 hover:border-indigo-500/50 hover:text-indigo-200 transition-all"
-                @click="simulatorText = sample"
+          <div v-if="monitors.length === 0" class="p-6 text-center space-y-4">
+            <div class="text-4xl">⚠️</div>
+            <p class="text-slate-300 text-sm">You must add at least one active monitor first to simulate.</p>
+            <button @click="goToMonitors" class="btn-primary">Add Group Monitor</button>
+          </div>
+
+          <div v-else class="space-y-4">
+            <!-- Select Group Monitor -->
+            <div>
+              <label class="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2 block">
+                Select Monitor (Niche Context)
+              </label>
+              <select
+                v-model="selectedMonitorId"
+                class="input-field"
               >
-                {{ sample.slice(0, 30) }}...
+                <option v-for="m in monitors" :key="m.id" :value="m.id">
+                  {{ m.group_name }} ({{ m.keywords?.split(',')[0] || 'niche' }})
+                </option>
+              </select>
+            </div>
+
+            <!-- Post Text -->
+            <div>
+              <label class="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2 block">
+                Facebook Post Content
+              </label>
+              <textarea
+                v-model="simulatorText"
+                class="input-field min-h-[100px]"
+                placeholder="Type Facebook post text here in Arabic, English, or slang..."
+                dir="auto"
+              />
+            </div>
+
+            <!-- Action buttons -->
+            <div class="flex gap-3 pt-2">
+              <button
+                class="btn-primary flex-1 justify-center py-3"
+                :disabled="!simulatorText.trim() || isSimulating"
+                @click="runSimulation"
+              >
+                <span v-if="isSimulating" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                {{ isSimulating ? 'Analyzing...' : 'Simulate Webhook POST' }}
               </button>
+              <button class="btn-ghost" @click="showSimulator = false">Cancel</button>
             </div>
-          </div>
 
-          <!-- Text input -->
-          <div class="mb-4">
-            <label class="text-xs text-slate-400 font-medium uppercase tracking-wide mb-2 block">
-              Post Content
-            </label>
-            <textarea
-              id="simulator-input"
-              v-model="simulatorText"
-              class="input-field min-h-[120px]"
-              placeholder="اكتب محتوى البوست هنا... أو Write the post content here..."
-              dir="auto"
-            />
-          </div>
-
-          <!-- Group name -->
-          <div class="mb-5">
-            <label class="text-xs text-slate-400 font-medium uppercase tracking-wide mb-2 block">
-              Group Name (optional)
-            </label>
-            <input
-              v-model="simulatorGroup"
-              type="text"
-              class="input-field"
-              placeholder="e.g. MBA Community Egypt"
-            />
-          </div>
-
-          <!-- Result -->
-          <div
-            v-if="simulatorResult"
-            class="mb-4 rounded-2xl p-4"
-            :class="simulatorResult.is_lead
-              ? 'bg-emerald-500/10 border border-emerald-500/30'
-              : 'bg-slate-500/10 border border-slate-600/30'"
-          >
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-lg">{{ simulatorResult.is_lead ? '✅' : '❌' }}</span>
-              <span class="font-semibold text-sm" :class="simulatorResult.is_lead ? 'text-emerald-400' : 'text-slate-400'">
-                {{ simulatorResult.is_lead ? 'Lead Detected!' : 'Not a Lead' }}
-              </span>
-              <span class="ml-auto text-sm font-bold" :class="simulatorResult.is_lead ? 'text-emerald-300' : 'text-slate-400'">
-                {{ Math.round(simulatorResult.confidence_score * 100) }}% confidence
-              </span>
+            <!-- Simulation Result Alert -->
+            <div v-if="simulationResult" class="p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 space-y-2 mt-4 text-xs">
+              <div class="flex justify-between items-center">
+                <span class="font-bold text-white text-sm">Result Summary</span>
+                <span :class="simulationResult.is_lead ? 'badge-lead' : 'badge-not-lead'">
+                  {{ simulationResult.is_lead ? 'Lead Detected' : 'Not a Lead' }}
+                </span>
+              </div>
+              <p class="text-slate-300 font-medium">💡 {{ simulationResult.summary }}</p>
+              <p class="text-[10px] text-slate-400">Confidence: {{ Math.round(simulationResult.confidence_score * 100) }}% | Intent: {{ simulationResult.intent_category }}</p>
             </div>
-            <p class="text-xs text-slate-300 italic">{{ simulatorResult.summary }}</p>
-            <p class="text-xs text-slate-500 mt-1">Intent: {{ simulatorResult.intent_category }}</p>
-          </div>
-
-          <div class="flex gap-3">
-            <button
-              id="btn-run-sim"
-              class="btn-primary flex-1 justify-center"
-              :disabled="!simulatorText.trim() || isSimulating"
-              @click="runSimulation"
-            >
-              <span v-if="isSimulating" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              <span v-else>🚀</span>
-              {{ isSimulating ? 'Analyzing...' : 'Run Analysis' }}
-            </button>
-            <button class="btn-ghost" @click="showSimulator = false">Cancel</button>
           </div>
         </div>
       </div>
     </Transition>
-  </div>
+  </NuxtLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useLeads } from '~/composables/useLeads'
+import { useAuth } from '~/composables/useAuth'
+import { useRouter, useHead } from '#imports'
 
-// Disable SSR — this dashboard requires client-side Supabase Realtime
-definePageMeta({ ssr: false })
+definePageMeta({
+  middleware: 'auth',
+  ssr: false
+})
 
-// SEO
 useHead({
-  title: 'Brooklyn Business School — MBA Lead Monitor',
-  meta: [
-    { name: 'description', content: 'Real-time Facebook group lead monitoring and alert system for Brooklyn Business School MBA programs.' },
-    { name: 'robots', content: 'noindex, nofollow' },
-  ],
-  link: [
-    { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-    { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
-  ],
+  title: 'Dashboard Overview — Lead Monitor'
 })
 
-const { leads, total, isLoading, error, isConnected, leadsOnlyFilter, refresh } = useLeads()
+const { leads, total, isLoading, isConnected, refresh } = useLeads()
+const { authFetch } = useAuth()
+const router = useRouter()
 
-const skipDuplicatesSetting = ref(false)
+// Monitors State
+const monitors = ref<any[]>([])
+const monitorsLoading = ref(false)
 
-async function loadSettings() {
-  try {
-    const data = await $fetch<{ skipDuplicates: boolean }>('/api/settings')
-    skipDuplicatesSetting.value = data.skipDuplicates
-  } catch (err) {
-    console.error('Failed to load settings:', err)
-  }
-}
+// Simulator State
+const showSimulator = ref(false)
+const selectedMonitorId = ref('')
+const simulatorText = ref('')
+const isSimulating = ref(false)
+const simulationResult = ref<any | null>(null)
 
-async function updateSettings() {
-  try {
-    await $fetch('/api/settings', {
-      method: 'POST',
-      body: {
-        skipDuplicates: skipDuplicatesSetting.value,
-      },
-    })
-  } catch (err) {
-    console.error('Failed to update settings:', err)
-    alert('Failed to save settings. Please try again.')
-  }
-}
-
-onMounted(() => {
-  loadSettings()
-})
-
-// Stats
+// Stats Calculation
 const stats = computed(() => {
   const leadsList = leads.value
   const detected = leadsList.filter(l => l.is_lead).length
   const avgConf = detected > 0
     ? Math.round(leadsList.filter(l => l.is_lead).reduce((s, l) => s + l.confidence_score, 0) / detected * 100)
     : 0
-  const today = leadsList.filter((l) => {
-    const d = new Date(l.created_at)
-    const now = new Date()
-    return d.toDateString() === now.toDateString()
-  }).length
 
   return [
-    { icon: '📊', label: 'Total Analyzed', value: total.value },
-    { icon: '🎯', label: 'Leads Detected', value: detected },
+    { icon: '🎯', label: 'Active Monitors', value: monitors.value.length },
+    { icon: '📊', label: 'Total Scanned', value: total.value },
+    { icon: '🔥', label: 'Leads Detected', value: detected },
     { icon: '📈', label: 'Avg Confidence', value: `${avgConf}%` },
-    { icon: '📅', label: 'Today', value: today },
   ]
 })
+
+onMounted(async () => {
+  await fetchMonitors()
+})
+
+async function fetchMonitors() {
+  monitorsLoading.value = true
+  try {
+    const res = await authFetch<{ success: boolean; data: any[] }>('/api/monitors')
+    monitors.value = res.data || []
+    if (monitors.value.length > 0) {
+      selectedMonitorId.value = monitors.value[0].id
+    }
+  } catch (err) {
+    console.error('Failed to fetch monitors:', err)
+  } finally {
+    monitorsLoading.value = false
+  }
+}
+
+function openSimulator() {
+  simulationResult.value = null
+  showSimulator.value = true
+}
+
+function goToMonitors() {
+  showSimulator.value = false
+  router.push('/monitors')
+}
+
+async function runSimulation() {
+  if (!simulatorText.value.trim() || !selectedMonitorId.value) return
+  isSimulating.value = true
+  simulationResult.value = null
+
+  const monitor = monitors.value.find(m => m.id === selectedMonitorId.value)
+
+  try {
+    const res = await authFetch<any>('/api/test-lead', {
+      method: 'POST',
+      body: {
+        content: simulatorText.value.trim(),
+        group_name: monitor?.group_name || 'Simulator',
+        post_url: monitor?.group_url || 'https://facebook.com/groups/test-simulated/posts/1',
+      }
+    })
+    
+    simulationResult.value = res
+    await refresh()
+  } catch (err) {
+    console.error('Simulation run failed:', err)
+    alert('Simulation run failed.')
+  } finally {
+    isSimulating.value = false
+  }
+}
 
 // Helpers
 function formatDate(iso: string) {
@@ -386,99 +343,17 @@ function formatDate(iso: string) {
 function isArabic(text: string) {
   return /[\u0600-\u06FF]/.test(text)
 }
-
-function confidenceClass(score: number) {
-  if (score >= 0.8) return 'bg-emerald-500/20 text-emerald-300'
-  if (score >= 0.5) return 'bg-yellow-500/20 text-yellow-300'
-  return 'bg-slate-500/20 text-slate-400'
-}
-
-// Simulator
-const showSimulator = ref(false)
-const simulatorText = ref('')
-const simulatorGroup = ref('')
-const isSimulating = ref(false)
-const simulatorResult = ref<null | {
-  is_lead: boolean
-  confidence_score: number
-  summary: string
-  intent_category: string
-}>(null)
-
-const quickSamples = [
-  'حد يرشحلي مكان اخد فيه MBA قوي في القاهرة بسرعة؟',
-  'عايز اكمل تعليمي وآخد درجة الماجستير في إدارة الأعمال',
-  'I am looking for a reputable business school in Cairo for an MBA program',
-  'عندي خبرة 5 سنين وعايز اترقى، هل MBA هيفيدني؟',
-  'مبروك للزملاء على التخرج! كانت رحلة رائعة',
-]
-
-async function runSimulation() {
-  if (!simulatorText.value.trim()) return
-  isSimulating.value = true
-  simulatorResult.value = null
-
-  try {
-    const res = await $fetch<{
-      is_lead: boolean
-      confidence_score: number
-      summary: string
-      intent_category: string
-    }>('/api/test-lead', {
-      method: 'POST',
-      body: {
-        content: simulatorText.value.trim(),
-        group_name: simulatorGroup.value.trim() || 'Simulator',
-      },
-    })
-    simulatorResult.value = res
-    await refresh()
-  }
-  catch (err: unknown) {
-    console.error('Simulation failed:', err)
-    alert('Simulation failed. Check console for details.')
-  }
-  finally {
-    isSimulating.value = false
-  }
-}
 </script>
 
 <style scoped>
-.lead-list-enter-active {
-  animation: fadeInUp 0.4s ease forwards;
+.glass {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(16px);
 }
-
-.lead-list-leave-active {
+.modal-enter-active, .modal-leave-active {
   transition: opacity 0.2s ease;
 }
-
-.lead-list-leave-to {
-  opacity: 0;
-}
-
-.modal-enter-active,
-.modal-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.modal-enter-from,
-.modal-leave-to {
-  opacity: 0;
-}
-
-.modal-enter-active .glass,
-.modal-leave-active .glass {
-  transition: transform 0.2s ease, opacity 0.2s ease;
-}
-
-.modal-enter-from .glass {
-  transform: translateY(16px);
-  opacity: 0;
-}
-
-.modal-leave-to .glass {
-  transform: translateY(8px);
+.modal-enter-from, .modal-leave-to {
   opacity: 0;
 }
 </style>

@@ -31,7 +31,11 @@ Return ONLY a valid JSON object in this exact format:
   "summary": "ملخص طلب العميل"
 }`
 
-export async function analyzeLeadWithGroq(postContent: string): Promise<LeadAnalysisResult> {
+export async function analyzeLeadWithGroq(
+  postContent: string,
+  nicheDescription?: string,
+  keywords?: string
+): Promise<LeadAnalysisResult> {
   const config = useRuntimeConfig()
   const apiKey = config.groqApiKey || process.env.GROQ_API_KEY
 
@@ -42,6 +46,25 @@ export async function analyzeLeadWithGroq(postContent: string): Promise<LeadAnal
 
   const MAX_RETRIES = 3
   let lastError: unknown
+
+  const activePrompt = (nicheDescription && keywords)
+    ? `You are an expert AI Lead Scoring Classifier.
+Your goal is to identify potential students or customers (Leads) inquiring about or seeking recommendations for: ${nicheDescription}.
+Specific keywords of interest: ${keywords}.
+
+CRITICAL RULES FOR CLASSIFICATION:
+1. A post IS A LEAD (is_lead: true, confidence >= 0.85, intent: "LEAD_INQUIRY") if the author is actively asking for recommendations or inquiring about the target niche.
+2. A post IS NOT A LEAD (is_lead: false, confidence <= 0.20, intent: "NOT_A_LEAD") if it is an advertisement, graduation congrats, or unrelated topic.
+
+Return ONLY a valid JSON object in this exact format:
+{
+  "is_lead": boolean,
+  "confidence": number,
+  "intent": "LEAD_INQUIRY" | "NOT_A_LEAD",
+  "reasoning": "سبب صريح باللغة العربية بملخص قصير",
+  "summary": "ملخص طلب العميل"
+}`
+    : SYSTEM_PROMPT
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -60,7 +83,7 @@ export async function analyzeLeadWithGroq(postContent: string): Promise<LeadAnal
         body: {
           model: 'llama-3.3-70b-versatile',
           messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'system', content: activePrompt },
             { role: 'user', content: `Analyze this post:\n\n"${postContent}"` },
           ],
           temperature: 0.1,

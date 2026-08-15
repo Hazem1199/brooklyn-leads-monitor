@@ -1,8 +1,9 @@
-// server/api/leads.get.ts
-// GET /api/leads — Fetch paginated leads for dashboard
 import { useSupabaseServer } from '../utils/supabase'
+import { getAuthUser } from '../utils/auth'
 
 export default defineEventHandler(async (event) => {
+  const user = await getAuthUser(event)
+  
   const query = getQuery(event)
   const page = Math.max(1, Number(query.page) || 1)
   const limit = Math.min(50, Number(query.limit) || 20)
@@ -14,6 +15,7 @@ export default defineEventHandler(async (event) => {
   let queryBuilder = supabase
     .from('leads')
     .select('*', { count: 'exact' })
+    .eq('user_id', user.id)
     .neq('group_name', '__SYSTEM_SETTINGS__')
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)

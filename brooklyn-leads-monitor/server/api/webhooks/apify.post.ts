@@ -116,6 +116,18 @@ export default defineEventHandler(async (event) => {
 
   // ── 4. Process each post ─────────────────────────────────────────────────
   const supabase = useSupabaseServer()
+
+  // Fetch all active monitors
+  const { data: monitors, error: monitorsError } = await supabase
+    .from('monitors')
+    .select('*')
+    .eq('is_active', true)
+
+  if (monitorsError) {
+    console.error('[Apify] Failed to fetch monitors:', monitorsError.message)
+    throw createError({ statusCode: 500, message: 'Database error fetching monitors' })
+  }
+
   let leadsFound = 0
   let processed = 0
   const errors: string[] = []
@@ -137,91 +149,127 @@ export default defineEventHandler(async (event) => {
         || 'Facebook Group'
       ).trim()
 
-      // Extract post URL (prefer direct permalink)
+      // Extract post URL
       const postUrl = post.permalink || post.url || post.facebookUrl || null
 
-      // Extract sender (author name or profile URL)
+      // Extract sender
       const sender = post.user?.name || post.authorName || null
 
-      // ── Duplicate Detection ──────────────────────────────────────────
-      const { data: existingLeads, error: checkError } = await supabase
-        .from('leads')
-        .select('is_lead, confidence_score, summary')
-        .eq('post_content', postContent.slice(0, 1000))
-        .order('created_at', { ascending: false })
-        .limit(1)
+      // Find matching monitors for this post
+      const matchingMonitors = (monitors || []).filter((m) => {
+        const nameMatch = m.group_name && groupName && m.group_name.toLowerCase().trim() === groupName.toLowerCase().trim()
+        const urlMatch = m.group_url && postUrl && postUrl.toLowerCase().includes(m.group_url.toLowerCase().trim())
+        return nameMatch || urlMatch
+      })
 
-      if (checkError) {
-        console.error('[Apify] Error checking duplicate:', checkError.message)
-      }
-
-      const isDuplicate = existingLeads && existingLeads.length > 0
-      const duplicateMode = systemSettings.skipDuplicates ? 'skip' : (config.duplicateMode || 'mark')
-
-      if (isDuplicate && duplicateMode === 'skip') {
-        console.log(`[Apify] Duplicate post detected. Skipping as duplicateMode is "skip": ${postContent.slice(0, 80)}...`)
+      if (matchingMonitors.length === 0) {
         continue
       }
 
-      let analysis
-      let isDuplicateMarked = false
+      // Process post for each matching tenant monitor
+      for (const monitor of matchingMonitors) {
+        try {
+          // Get user profile for personal Telegram Chat ID
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('telegram_chat_id')
+            .eq('id', monitor.user_id)
+            .single()
 
-      if (isDuplicate && duplicateMode === 'mark') {
-        console.log('[Apify] Duplicate post detected. duplicateMode is "mark". Re-using previous AI analysis.')
-        const prev = existingLeads![0]
-        const cleanSummary = prev.summary.startsWith('[مكرر]') ? prev.summary : `[مكرر] ${prev.summary}`
-        analysis = {
-          is_lead: prev.is_lead,
-          confidence_score: prev.confidence_score,
-          summary: cleanSummary,
-          intent_category: 'Duplicate Inquiry',
+          // ── Duplicate Detection (scoped to user) ──────────────────────────
+          const { data: existingLeads, error: checkError } = await supabase
+            .from('leads')
+            .select('is_lead, confidence_score, summary')
+            .eq('user_id', monitor.user_id)
+            .eq('post_content', postContent.slice(0, 1000))
+            .order('created_at', { ascending: false })
+            .limit(1)
+
+          if (checkError) {
+            console.error('[Apify] Error checking duplicate:', checkError.message)
+          }
+
+          const isDuplicate = existingLeads && existingLeads.length > 0
+          const duplicateMode = systemSettings.skipDuplicates ? 'skip' : (config.duplicateMode || 'mark')
+
+          if (isDuplicate && duplicateMode === 'skip') {
+            console.log(`[Apify] Duplicate post detected for user ${monitor.user_id}. Skipping: ${postContent.slice(0, 80)}...`)
+            continue
+          }
+
+          let analysis
+          let isDuplicateMarked = false
+
+          if (isDuplicate && duplicateMode === 'mark') {
+            console.log(`[Apify] Duplicate post detected for user ${monitor.user_id}. Re-using previous AI analysis.`)
+            const prev = existingLeads![0]
+            const cleanSummary = prev.summary.startsWith('[مكرر]') ? prev.summary : `[مكرر] ${prev.summary}`
+            analysis = {
+              is_lead: prev.is_lead,
+              confidence_score: prev.confidence_score,
+              summary: cleanSummary,
+              intent_category: 'Duplicate Inquiry',
+            }
+            isDuplicateMarked = true
+          }
+          else {
+            console.log(`[Apify] Analyzing post for user ${monitor.user_id}: ${postContent.slice(0, 80)}...`)
+            analysis = await analyzeLeadWithGroq(
+              postContent,
+              monitor.niche_description || undefined,
+              monitor.keywords || undefined
+            )
+            console.log(`[Apify] AI result: is_lead=${analysis.is_lead}, confidence=${analysis.confidence_score}`)
+          }
+
+          // ── Save to Supabase ───────────────────────────────────────────────
+          const { data: lead, error: dbError } = await supabase
+            .from('leads')
+            .insert({
+              user_id: monitor.user_id,
+              monitor_id: monitor.id,
+              group_name: groupName,
+              post_url: postUrl,
+              post_content: postContent.slice(0, 1000),
+              summary: analysis.summary,
+              is_lead: analysis.is_lead,
+              confidence_score: analysis.confidence_score,
+              sender: sender,
+            })
+            .select()
+            .single()
+
+          if (dbError) {
+            console.error('[Apify] DB error for post:', dbError.message)
+            errors.push(dbError.message)
+            continue
+          }
+
+          processed++
+
+          // ── Telegram alert if lead ─────────────────────────────────────────
+          if (analysis.is_lead && lead) {
+            leadsFound++
+            await sendTelegramAlert({
+              id: lead.id,
+              group_name: lead.group_name,
+              post_url: lead.post_url,
+              post_content: lead.post_content,
+              summary: lead.summary,
+              confidence_score: lead.confidence_score,
+              intent_category: analysis.intent_category,
+              sender: lead.sender,
+              created_at: lead.created_at,
+              is_duplicate: isDuplicateMarked,
+              telegram_chat_id: profile?.telegram_chat_id || undefined,
+            })
+          }
         }
-        isDuplicateMarked = true
-      }
-      else {
-        console.log(`[Apify] Analyzing post from "${groupName}": ${postContent.slice(0, 80)}...`)
-        analysis = await analyzeLeadWithGroq(postContent)
-        console.log(`[Apify] AI result: is_lead=${analysis.is_lead}, confidence=${analysis.confidence_score}`)
-      }
-
-      // ── Save to Supabase ───────────────────────────────────────────────
-      const { data: lead, error: dbError } = await supabase
-        .from('leads')
-        .insert({
-          group_name: groupName,
-          post_url: postUrl,
-          post_content: postContent.slice(0, 1000),
-          summary: analysis.summary,
-          is_lead: analysis.is_lead,
-          confidence_score: analysis.confidence_score,
-          sender: sender,
-        })
-        .select()
-        .single()
-
-      if (dbError) {
-        console.error('[Apify] DB error for post:', dbError.message)
-        errors.push(dbError.message)
-        continue
-      }
-
-      processed++
-
-      // ── Telegram alert if lead ─────────────────────────────────────────
-      if (analysis.is_lead && lead) {
-        leadsFound++
-        await sendTelegramAlert({
-          id: lead.id,
-          group_name: lead.group_name,
-          post_url: lead.post_url,
-          post_content: lead.post_content,
-          summary: lead.summary,
-          confidence_score: lead.confidence_score,
-          intent_category: analysis.intent_category,
-          sender: lead.sender,
-          created_at: lead.created_at,
-          is_duplicate: isDuplicateMarked,
-        })
+        catch (monitorErr: unknown) {
+          const msg = monitorErr instanceof Error ? monitorErr.message : String(monitorErr)
+          console.error(`[Apify] Error processing monitor ${monitor.id}:`, msg)
+          errors.push(msg)
+        }
       }
     }
     catch (err: unknown) {

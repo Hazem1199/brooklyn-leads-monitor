@@ -12,12 +12,13 @@ export interface LeadAlertData {
   sender?: string | null
   created_at: string
   is_duplicate?: boolean
+  telegram_chat_id?: string
 }
 
 export async function sendTelegramAlert(leadData: LeadAlertData): Promise<void> {
   const config = useRuntimeConfig()
   const botToken = config.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN
-  const chatId = config.telegramChatId || process.env.TELEGRAM_CHAT_ID
+  const chatId = leadData.telegram_chat_id || config.telegramChatId || process.env.TELEGRAM_CHAT_ID
 
   if (!botToken || !chatId) {
     console.warn('[Telegram] BOT_TOKEN or CHAT_ID not set — skipping alert')
