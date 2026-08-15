@@ -1,4 +1,4 @@
-import { useSupabaseServer } from '../../utils/supabase'
+import { queryDb } from '../../utils/db'
 import { getAuthUser } from '../../utils/auth'
 
 export default defineEventHandler(async (event) => {
@@ -9,20 +9,16 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Missing monitor ID' })
   }
 
-  const supabase = useSupabaseServer()
-
-  const { error } = await supabase
-    .from('monitors')
-    .delete()
-    .eq('id', id)
-    .eq('user_id', user.id) // Ensure users can only delete their own monitors
-
-  if (error) {
-    throw createError({ statusCode: 500, message: error.message })
-  }
-
-  return {
-    success: true,
-    message: 'Monitor deleted successfully'
+  try {
+    await queryDb(
+      'DELETE FROM public.monitors WHERE id = $1 AND user_id = $2',
+      [id, user.id]
+    )
+    return {
+      success: true,
+      message: 'Monitor deleted successfully'
+    }
+  } catch (err: any) {
+    throw createError({ statusCode: 500, message: err.message })
   }
 })

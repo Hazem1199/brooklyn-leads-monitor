@@ -4,7 +4,7 @@
 
 import { analyzeLeadWithGroq } from '../../utils/ai'
 import { sendTelegramAlert } from '../../utils/telegram'
-import { useSupabaseServer } from '../../utils/supabase'
+import { queryDb } from '../../utils/db'
 import { getSystemSettings } from '../../utils/settings'
 
 // ── Apify webhook payload ──────────────────────────────────────────────────
@@ -115,15 +115,11 @@ export default defineEventHandler(async (event) => {
   }
 
   // ── 4. Process each post ─────────────────────────────────────────────────
-  const supabase = useSupabaseServer()
-
   // Fetch all active monitors
-  const { data: monitors, error: monitorsError } = await supabase
-    .from('monitors')
-    .select('*')
-    .eq('is_active', true)
-
-  if (monitorsError) {
+  let monitors: any[] = []
+  try {
+    monitors = await queryDb('SELECT * FROM public.monitors WHERE is_active = true')
+  } catch (monitorsError: any) {
     console.error('[Apify] Failed to fetch monitors:', monitorsError.message)
     throw createError({ statusCode: 500, message: 'Database error fetching monitors' })
   }
@@ -170,22 +166,19 @@ export default defineEventHandler(async (event) => {
       for (const monitor of matchingMonitors) {
         try {
           // Get user profile for personal Telegram Chat ID
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('telegram_chat_id')
-            .eq('id', monitor.user_id)
-            .single()
+          const profiles = await queryDb('SELECT telegram_chat_id FROM public.profiles WHERE id = $1', [monitor.user_id])
+          const profile = profiles[0] || null
 
           // ── Duplicate Detection (scoped to user) ──────────────────────────
-          const { data: existingLeads, error: checkError } = await supabase
-            .from('leads')
-            .select('is_lead, confidence_score, summary')
-            .eq('user_id', monitor.user_id)
-            .eq('post_content', postContent.slice(0, 1000))
-            .order('created_at', { ascending: false })
-            .limit(1)
-
-          if (checkError) {
+          let existingLeads: any[] = []
+          try {
+            existingLeads = await queryDb(
+              `SELECT is_lead, confidence_score, summary FROM public.leads
+               WHERE user_id = $1 AND post_content = $2
+               ORDER BY created_at DESC LIMIT 1`,
+              [monitor.user_id, postContent.slice(0, 1000)]
+            )
+          } catch (checkError: any) {
             console.error('[Apify] Error checking duplicate:', checkError.message)
           }
 
@@ -202,7 +195,7 @@ export default defineEventHandler(async (event) => {
 
           if (isDuplicate && duplicateMode === 'mark') {
             console.log(`[Apify] Duplicate post detected for user ${monitor.user_id}. Re-using previous AI analysis.`)
-            const prev = existingLeads![0]
+            const prev = existingLeads[0]
             const cleanSummary = prev.summary.startsWith('[مكرر]') ? prev.summary : `[مكرر] ${prev.summary}`
             analysis = {
               is_lead: prev.is_lead,
@@ -223,23 +216,26 @@ export default defineEventHandler(async (event) => {
           }
 
           // ── Save to Supabase ───────────────────────────────────────────────
-          const { data: lead, error: dbError } = await supabase
-            .from('leads')
-            .insert({
-              user_id: monitor.user_id,
-              monitor_id: monitor.id,
-              group_name: groupName,
-              post_url: postUrl,
-              post_content: postContent.slice(0, 1000),
-              summary: analysis.summary,
-              is_lead: analysis.is_lead,
-              confidence_score: analysis.confidence_score,
-              sender: sender,
-            })
-            .select()
-            .single()
-
-          if (dbError) {
+          let lead: any = null
+          try {
+            const leadRows = await queryDb(
+              `INSERT INTO public.leads (user_id, monitor_id, group_name, post_url, post_content, summary, is_lead, confidence_score, sender)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+               RETURNING *`,
+              [
+                monitor.user_id,
+                monitor.id,
+                groupName,
+                postUrl,
+                postContent.slice(0, 1000),
+                analysis.summary,
+                analysis.is_lead,
+                analysis.confidence_score,
+                sender,
+              ]
+            )
+            lead = leadRows[0]
+          } catch (dbError: any) {
             console.error('[Apify] DB error for post:', dbError.message)
             errors.push(dbError.message)
             continue

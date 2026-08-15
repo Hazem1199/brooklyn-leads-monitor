@@ -3,7 +3,7 @@
 // Accepts POST { sender, group_name, post_url, content }
 import { analyzeLeadWithGroq } from '../../utils/ai'
 import { sendTelegramAlert } from '../../utils/telegram'
-import { useSupabaseServer } from '../../utils/supabase'
+import { queryDb } from '../../utils/db'
 
 export default defineEventHandler(async (event) => {
   // Only allow POST
@@ -165,15 +165,11 @@ export default defineEventHandler(async (event) => {
 
   console.log(`[Webhook] Received post from "${groupName}" — ${postContent.slice(0, 80)}...`)
 
-  const supabase = useSupabaseServer()
-
   // 1. Fetch all active monitors
-  const { data: monitors, error: monitorsError } = await supabase
-    .from('monitors')
-    .select('*')
-    .eq('is_active', true)
-
-  if (monitorsError) {
+  let monitors: any[] = []
+  try {
+    monitors = await queryDb('SELECT * FROM public.monitors WHERE is_active = true')
+  } catch (monitorsError: any) {
     console.error('[Webhook] Failed to fetch monitors:', monitorsError.message)
     throw createError({ statusCode: 500, message: 'Database error fetching monitors' })
   }
@@ -202,11 +198,8 @@ export default defineEventHandler(async (event) => {
   for (const monitor of matchingMonitors) {
     try {
       // Get user profile for personal Telegram Chat ID
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('telegram_chat_id')
-        .eq('id', monitor.user_id)
-        .single()
+      const profiles = await queryDb('SELECT telegram_chat_id FROM public.profiles WHERE id = $1', [monitor.user_id])
+      const profile = profiles[0] || null
 
       // Run AI analysis using specific monitor's niche keywords & description
       const analysis = await analyzeLeadWithGroq(
@@ -216,23 +209,26 @@ export default defineEventHandler(async (event) => {
       )
 
       // Save user-specific lead
-      const { data: lead, error: dbError } = await supabase
-        .from('leads')
-        .insert({
-          user_id: monitor.user_id,
-          monitor_id: monitor.id,
-          group_name: groupName,
-          post_url: postUrl,
-          post_content: postContent,
-          summary: analysis.summary,
-          is_lead: analysis.is_lead,
-          confidence_score: analysis.confidence_score,
-          sender: sender,
-        })
-        .select()
-        .single()
-
-      if (dbError) {
+      let lead: any = null
+      try {
+        const leadRows = await queryDb(
+          `INSERT INTO public.leads (user_id, monitor_id, group_name, post_url, post_content, summary, is_lead, confidence_score, sender)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           RETURNING *`,
+          [
+            monitor.user_id,
+            monitor.id,
+            groupName,
+            postUrl,
+            postContent,
+            analysis.summary,
+            analysis.is_lead,
+            analysis.confidence_score,
+            sender,
+          ]
+        )
+        lead = leadRows[0]
+      } catch (dbError: any) {
         console.error(`[Webhook] Database error saving lead for user ${monitor.user_id}:`, dbError.message)
         continue
       }

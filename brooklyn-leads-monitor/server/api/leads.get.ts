@@ -1,4 +1,4 @@
-import { useSupabaseServer } from '../utils/supabase'
+import { queryDb } from '../utils/db'
 import { getAuthUser } from '../utils/auth'
 
 export default defineEventHandler(async (event) => {
@@ -10,31 +10,36 @@ export default defineEventHandler(async (event) => {
   const leadsOnly = query.leads_only === 'true'
   const offset = (page - 1) * limit
 
-  const supabase = useSupabaseServer()
+  try {
+    // 1. Fetch paginated leads
+    const data = await queryDb(
+      `SELECT * FROM public.leads 
+       WHERE user_id = $1 
+         AND group_name != '__SYSTEM_SETTINGS__'
+         AND ($2::boolean = false OR is_lead = true)
+       ORDER BY created_at DESC 
+       LIMIT $3 OFFSET $4`,
+      [user.id, leadsOnly, limit, offset]
+    )
 
-  let queryBuilder = supabase
-    .from('leads')
-    .select('*', { count: 'exact' })
-    .eq('user_id', user.id)
-    .neq('group_name', '__SYSTEM_SETTINGS__')
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1)
+    // 2. Fetch total count
+    const countRows = await queryDb<{ count: number }>(
+      `SELECT COUNT(*)::integer as count FROM public.leads 
+       WHERE user_id = $1 
+         AND group_name != '__SYSTEM_SETTINGS__'
+         AND ($2::boolean = false OR is_lead = true)`,
+      [user.id, leadsOnly]
+    )
+    const count = countRows[0]?.count || 0
 
-  if (leadsOnly) {
-    queryBuilder = queryBuilder.eq('is_lead', true)
-  }
-
-  const { data, error, count } = await queryBuilder
-
-  if (error) {
-    throw createError({ statusCode: 500, message: error.message })
-  }
-
-  return {
-    data: data ?? [],
-    total: count ?? 0,
-    page,
-    limit,
-    pages: Math.ceil((count ?? 0) / limit),
+    return {
+      data: data || [],
+      total: count,
+      page,
+      limit,
+      pages: Math.ceil(count / limit),
+    }
+  } catch (err: any) {
+    throw createError({ statusCode: 500, message: err.message })
   }
 })

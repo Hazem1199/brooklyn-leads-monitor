@@ -1,4 +1,4 @@
-import { useSupabaseServer } from '../../utils/supabase'
+import { queryDb } from '../../utils/db'
 
 interface TelegramUpdate {
   message?: {
@@ -32,18 +32,16 @@ export default defineEventHandler(async (event) => {
     const userId = parts[1]?.trim()
 
     if (userId) {
-      const supabase = useSupabaseServer()
-
-      // Update profiles telegram_chat_id in Supabase
-      const { error } = await supabase
-        .from('profiles')
-        .update({ telegram_chat_id: String(chat.id) })
-        .eq('id', userId)
-
-      if (error) {
-        console.error('[Telegram Webhook] Failed to update profile:', error.message)
+      // Update profiles telegram_chat_id in Supabase bypassing RLS via pg
+      try {
+        await queryDb(
+          'UPDATE public.profiles SET telegram_chat_id = $1 WHERE id = $2',
+          [String(chat.id), userId]
+        )
+      } catch (dbError: any) {
+        console.error('[Telegram Webhook] Failed to update profile via pg:', dbError.message)
         await sendTelegramReply(chat.id, '❌ حدث خطأ أثناء ربط حسابك بالمنصة. يرجى المحاولة لاحقاً.')
-        return { success: false, error: error.message }
+        return { success: false, error: dbError.message }
       }
 
       console.log(`[Telegram Webhook] Successfully linked user ${userId} to chat ${chat.id}`)

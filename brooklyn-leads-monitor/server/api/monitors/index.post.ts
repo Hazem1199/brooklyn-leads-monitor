@@ -1,4 +1,4 @@
-import { useSupabaseServer } from '../../utils/supabase'
+import { queryDb } from '../../utils/db'
 import { getAuthUser } from '../../utils/auth'
 
 export default defineEventHandler(async (event) => {
@@ -14,27 +14,25 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Missing group_name' })
   }
 
-  const supabase = useSupabaseServer()
-
-  const { data, error } = await supabase
-    .from('monitors')
-    .insert({
-      user_id: user.id,
-      group_name: body.group_name.trim(),
-      group_url: body.group_url?.trim() || null,
-      niche_description: body.niche_description?.trim() || null,
-      keywords: body.keywords?.trim() || null,
-      is_active: true
-    })
-    .select()
-    .single()
-
-  if (error) {
-    throw createError({ statusCode: 500, message: error.message })
-  }
-
-  return {
-    success: true,
-    data
+  try {
+    const rows = await queryDb(
+      `INSERT INTO public.monitors (user_id, group_name, group_url, niche_description, keywords, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [
+        user.id,
+        body.group_name.trim(),
+        body.group_url?.trim() || null,
+        body.niche_description?.trim() || null,
+        body.keywords?.trim() || null,
+        true
+      ]
+    )
+    return {
+      success: true,
+      data: rows[0]
+    }
+  } catch (err: any) {
+    throw createError({ statusCode: 500, message: err.message })
   }
 })
