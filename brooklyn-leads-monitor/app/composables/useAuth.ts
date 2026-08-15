@@ -22,6 +22,10 @@ export function useAuth() {
     session.value = data.session
     user.value = data.session?.user ?? null
     
+    if (data.session?.access_token) {
+      localStorage.setItem('sb-access-token', data.session.access_token)
+    }
+    
     // Setup listener
     supabase.auth.onAuthStateChange((event, currentSession) => {
       session.value = currentSession
@@ -74,7 +78,7 @@ export function useAuth() {
 
   // Helper to fetch with auth token
   function authFetch<T>(url: string, options: any = {}) {
-    const token = localStorage.getItem('sb-access-token')
+    const token = session.value?.access_token || localStorage.getItem('sb-access-token')
     return $fetch<T>(url, {
       ...options,
       headers: {
